@@ -12,6 +12,7 @@ Usage:
 """
 
 import os
+import pdb
 import wandb
 from dotenv import load_dotenv
 from einops import rearrange
@@ -125,7 +126,7 @@ def train_or_test(args, model, tokenizer, batch, optimizer=None, is_training=Tru
 
     return bpd, is_correct, (probs, labels_pred)
 
-def save_probs(args, model, tokenizer, dataloader, name = "test"):
+def save_probs(args, model, tokenizer, dataloader, device, name = "test"):
     save_path = os.path.join(os.getcwd(), f"{args.prob_output_folder}/{name}_dataset_probs.csv")
     
     if os.path.exists(save_path):
@@ -134,8 +135,7 @@ def save_probs(args, model, tokenizer, dataloader, name = "test"):
     with torch.no_grad():
         for batch in tqdm(dataloader, desc="saving probabilities"):
             
-            
-            _, (probs, _) = bayes_inverse_llm_classifier(args, model, batch, tokenizer, device)
+            _, (probs, _) = bayes_inverse_llm_classifier(args, model, batch, tokenizer, device = device)
             
             data_index, _, _, _ = batch
             indices = torch.as_tensor(data_index).view(-1).tolist()
@@ -277,5 +277,5 @@ if __name__ == "__main__":
         batch_size=args.batch_size, 
         shuffle=False
         )
-    save_probs(args, model, tokenizer, train_n_val_dataloader, name = "train_n_val")
-    save_probs(args, model, tokenizer, test_dataloader, name = "test")
+    save_probs(args, model, tokenizer, train_n_val_dataloader, device=device, name = "train_n_val")
+    save_probs(args, model, tokenizer, test_dataloader, device=device, name = "test")

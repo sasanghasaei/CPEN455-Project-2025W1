@@ -70,4 +70,4 @@ if __name__ == "__main__":
         shuffle=False
         )
     
-    save_probs(args, model, tokenizer, test_dataloader, name = "test")
+    save_probs(args, model, tokenizer, test_dataloader, device=device, name = "test")
