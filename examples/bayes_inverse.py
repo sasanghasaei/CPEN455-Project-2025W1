@@ -21,7 +21,7 @@ import argparse
 import copy
 
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, ConcatDataset
 from torch.nn import functional as F
 
 
@@ -159,6 +159,7 @@ if __name__ == "__main__":
     parser.add_argument("--max_seq_len", type=int, default=256)
     parser.add_argument("--dataset_path", type=str, default="autograder/cpen455_released_datasets/train_val_subset.csv")
     parser.add_argument("--test_dataset_path", type=str, default="autograder/cpen455_released_datasets/test_subset.csv")
+    parser.add_argument("--synthetic_dataset_path", type=str, default="autograder/cpen455_released_datasets/synthetic_train_val.csv")
     parser.add_argument("--prob_output_folder", type=str, default="bayes_inverse_probs")
     parser.add_argument("--user_prompt", type=str, default="")
     parser.add_argument("--model_checkpoint_name", type=str, default="smollm2-135m-instruct")
@@ -169,6 +170,8 @@ if __name__ == "__main__":
     parser.add_argument("--early_stopping_patience", type=int, default=None, help="Number of validation checks without improvement before stopping")
     parser.add_argument("--early_stopping_min_delta", type=float, default=0.0, help="Minimum change in validation loss to qualify as improvement")
     
+    # whether to use synthetic data
+    parser.add_argument("--synthetic_data", action='store_true', help="If set, use synthetic data instead of real data")
     # whether to load already trained model
     parser.add_argument("--load_trained_model", action='store_true', help="If set, load a pre-trained model instead of training from scratch")
     args = parser.parse_args()
@@ -212,8 +215,8 @@ if __name__ == "__main__":
     if args.load_trained_model:
         print("Loading trained model from checkpoint...")
         model = LlamaModel(config)
-        # trained_model_path = f"{args.prob_output_folder}/{args.model_checkpoint_name}.pt"
-        trained_model_path = "bayes_inverse_probs/eighty_four_acc.pt"
+        trained_model_path = f"{args.prob_output_folder}/{args.model_checkpoint_name}.pt"
+        # trained_model_path = "bayes_inverse_probs/eighty_nine_acc.pt"
         state_dict = torch.load(trained_model_path, map_location=device)
         model.load_state_dict(state_dict)
         model = model.to(device)
@@ -227,7 +230,15 @@ if __name__ == "__main__":
     train_n_val_dataset = CPEN455_2025_W1_Dataset(csv_path=args.dataset_path)
     training_dataset, val_dataset = prepare_subset(train_n_val_dataset, int(0.8 * len(train_n_val_dataset)), ratio_spam=0.5, return_remaining=True)
     test_dataset = CPEN455_2025_W1_Dataset(csv_path=args.test_dataset_path)
+    synthetic_dataset = CPEN455_2025_W1_Dataset(csv_path=args.synthetic_dataset_path) if args.synthetic_data else None
 
+    if synthetic_dataset is not None:
+        print("Using synthetic data combined with real training data")
+        # combine synthetic dataset with training dataset
+        training_dataset = ConcatDataset([training_dataset, synthetic_dataset])
+         
+        training_dataset, _ = prepare_subset(training_dataset, int(len(training_dataset)), ratio_spam=0.5, return_remaining=True)
+        # Note that we are keeping the validation dataset unchanged, so it is from the real dataset
     training_dataloader = DataLoader(
         training_dataset, 
         batch_size=args.batch_size, 
