@@ -58,9 +58,14 @@ if __name__ == "__main__":
     config = Config._find_config_files(base_path)
 
     # Load model
+    print("Loading trained model from checkpoint...")
     model = LlamaModel(config)
-    load_model_weights(model, checkpoint, cache_dir=model_cache_dir, device=device)
+    trained_model_path = f"models_backup/eighty_nine_acc.pt"
+    # trained_model_path = "bayes_inverse_probs/eighty_nine_acc.pt"
+    state_dict = torch.load(trained_model_path, map_location=device)
+    model.load_state_dict(state_dict)
     model = model.to(device)
+    print(f"Trained model loaded from {trained_model_path}")
     
     test_dataset = CPEN455_2025_W1_Dataset(csv_path=args.test_dataset_path)
     
