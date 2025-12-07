@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 from einops import rearrange
 from tqdm import tqdm
 import argparse
+import copy
 
 import torch
 from torch.utils.data import DataLoader
@@ -160,11 +161,24 @@ if __name__ == "__main__":
     parser.add_argument("--test_dataset_path", type=str, default="autograder/cpen455_released_datasets/test_subset.csv")
     parser.add_argument("--prob_output_folder", type=str, default="bayes_inverse_probs")
     parser.add_argument("--user_prompt", type=str, default="")
-    
+    parser.add_argument("--model_checkpoint_name", type=str, default="smollm2-135m-instruct")
+    parser.add_argument("--weight_decay", type=float, default=0.01)
     # Training hyperparameters
-    parser.add_argument("--num_iterations", type=int, default=100)
+    parser.add_argument("--num_iterations", type=int, default=50)
     parser.add_argument("--learning_rate", type=float, default=1e-5)
+    parser.add_argument("--early_stopping_patience", type=int, default=None, help="Number of validation checks without improvement before stopping")
+    parser.add_argument("--early_stopping_min_delta", type=float, default=0.0, help="Minimum change in validation loss to qualify as improvement")
+    
+    # whether to load already trained model
+    parser.add_argument("--load_trained_model", action='store_true', help="If set, load a pre-trained model instead of training from scratch")
     args = parser.parse_args()
+
+    print(f"Using learning rate: {args.learning_rate}")
+    print(f"Using number of iterations: {args.num_iterations}")
+    print(f"batch size: {args.batch_size}")
+    print(f"weight decay: {args.weight_decay}")
+    print(f"early stopping patience: {args.early_stopping_patience}")
+    print(f"early stopping min delta: {args.early_stopping_min_delta}")
 
     load_dotenv()
     
@@ -195,9 +209,19 @@ if __name__ == "__main__":
     config = Config._find_config_files(base_path)
 
     # Load model
-    model = LlamaModel(config)
-    load_model_weights(model, checkpoint, cache_dir=model_cache_dir, device=device)
-    model = model.to(device)
+    if args.load_trained_model:
+        print("Loading trained model from checkpoint...")
+        model = LlamaModel(config)
+        # trained_model_path = f"{args.prob_output_folder}/{args.model_checkpoint_name}.pt"
+        trained_model_path = "bayes_inverse_probs/eighty_four_acc.pt"
+        state_dict = torch.load(trained_model_path, map_location=device)
+        model.load_state_dict(state_dict)
+        model = model.to(device)
+        print(f"Trained model loaded from {trained_model_path}")
+    else:
+        model = LlamaModel(config)
+        load_model_weights(model, checkpoint, cache_dir=model_cache_dir, device=device)
+        model = model.to(device)
 
     # Set up datasets and dataloaders
     train_n_val_dataset = CPEN455_2025_W1_Dataset(csv_path=args.dataset_path)
@@ -222,11 +246,18 @@ if __name__ == "__main__":
         shuffle=False
         )
     
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
     
     if os.path.exists(args.prob_output_folder) == False:
         os.makedirs(args.prob_output_folder)
 
+    # Early stopping variables
+    best_val_loss = float('inf')
+    patience_counter = 0
+    best_model_state = None
+    
+    training_iterator = iter(training_dataloader)
+    
     for iteration in tqdm(range(args.num_iterations), desc="Training"):
                     
         if (iteration + 1) % 10 == 0:
@@ -245,17 +276,44 @@ if __name__ == "__main__":
                     
                     val_acc_logger.update(is_correct)
                     val_bpd_logger.update(bpd.item())
-
-                    wandb.log({
-                        "val_avg_bpd": val_bpd_logger.compute_average(),
-                        "val_avg_accuracy": val_acc_logger.compute_accuracy(),
-                        "training_iteration": iteration,
-                        })
+            
+            # Log validation metrics after full validation pass
+            val_avg_bpd = val_bpd_logger.compute_average()
+            val_avg_acc = val_acc_logger.compute_accuracy()
+            
+            wandb.log({
+                "val_avg_bpd": val_avg_bpd,
+                "val_avg_accuracy": val_avg_acc,
+                "training_iteration": iteration,
+            })
+            
+            # Early stopping check
+            if args.early_stopping_patience is not None:
+                if val_avg_bpd < best_val_loss - args.early_stopping_min_delta:
+                    best_val_loss = val_avg_bpd
+                    patience_counter = 0
+                    best_model_state = copy.deepcopy(model.state_dict())
+                    print(f"\nValidation loss improved to {val_avg_bpd:.4f}")
+                else:
+                    patience_counter += 1
+                    print(f"\nNo improvement in validation loss. Patience: {patience_counter}/{args.early_stopping_patience}")
+                    
+                    if patience_counter >= args.early_stopping_patience:
+                        print(f"\nEarly stopping triggered at iteration {iteration}")
+                        if best_model_state is not None:
+                            model.load_state_dict(best_model_state)
+                            print("Restored best model weights")
+                        break
                     
         if not is_required_training(args.method):
             break
-                    
-        batch = next(iter(training_dataloader))
+        
+        # Get next batch, cycling through the dataset if needed
+        try:
+            batch = next(training_iterator)
+        except StopIteration:
+            training_iterator = iter(training_dataloader)
+            batch = next(training_iterator)
         
         bpd, is_correct, _ = train_or_test(
             args = args, 
@@ -270,6 +328,12 @@ if __name__ == "__main__":
             "training_batch_acc": is_correct.float().mean().item(),
             "training_iteration": iteration,
             })
+
+    # Save model checkpoint if training was performed
+    if is_required_training(args.method):
+        checkpoint_path = f"{args.prob_output_folder}/{args.model_checkpoint_name}.pt"
+        torch.save(model.state_dict(), checkpoint_path)
+        print(f"Checkpoint saved at {checkpoint_path}")
 
     # After training, save probabilities on test set
     train_n_val_dataloader = DataLoader(
