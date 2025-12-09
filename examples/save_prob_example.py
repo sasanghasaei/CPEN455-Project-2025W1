@@ -23,9 +23,35 @@ from model import LlamaModel
 from utils.weight_utils import load_model_weights
 from model.config import Config
 from model.tokenizer import Tokenizer
+from model.prefix_llama import PrefixLlamaModel
 from utils.download import _resolve_snapshot_path
 from utils.device import set_device
 from examples.bayes_inverse import save_probs
+
+
+def load_model(configuration):
+    print("Loading trained model from checkpoint...")
+    model = LlamaModel(configuration)
+    # trained_model_path = f"models_backup/ninety_two_point_8.pt"
+    trained_model_path = "bayes_inverse_probs/smollm2-135m-instruct.pt"
+    state_dict = torch.load(trained_model_path, map_location=device)
+    
+    # Check if the saved model was a prefix tuned model
+    is_prefix_model = any(key.startswith('prefix_') for key in state_dict.keys())
+    
+    if is_prefix_model:
+        print("Detected prefix-tuned model checkpoint")
+        # Need to wrap with PrefixLlamaModel first, then load state dict
+        load_model_weights(model, checkpoint, cache_dir=model_cache_dir, device=device)
+        model = PrefixLlamaModel(model, prefix_length=10)
+        model.load_state_dict(state_dict)
+        model = model.to(device)
+    else:
+        model.load_state_dict(state_dict)
+        model = model.to(device)
+    print(f"Trained model loaded from {trained_model_path}")
+    
+    return model
 
 if __name__ == "__main__":
     # random seed for reproducibility
@@ -58,14 +84,8 @@ if __name__ == "__main__":
     config = Config._find_config_files(base_path)
 
     # Load model
-    print("Loading trained model from checkpoint...")
-    model = LlamaModel(config)
-    trained_model_path = f"models_backup/eighty_nine_acc.pt"
-    # trained_model_path = "bayes_inverse_probs/eighty_nine_acc.pt"
-    state_dict = torch.load(trained_model_path, map_location=device)
-    model.load_state_dict(state_dict)
-    model = model.to(device)
-    print(f"Trained model loaded from {trained_model_path}")
+    model = load_model(config)
+    print("Model loaded successfully.")
     
     test_dataset = CPEN455_2025_W1_Dataset(csv_path=args.test_dataset_path)
     
