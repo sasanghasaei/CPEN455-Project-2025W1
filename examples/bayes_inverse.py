@@ -27,6 +27,7 @@ from torch.nn import functional as F
 
 from autograder.dataset import CPEN455_2025_W1_Dataset, ENRON_LABEL_INDEX_MAP, prepare_subset
 from model import LlamaModel
+from model.prefix_llama import PrefixLlamaModel
 from utils.weight_utils import load_model_weights
 from model.config import Config
 from model.tokenizer import Tokenizer
@@ -149,6 +150,34 @@ def save_probs(args, model, tokenizer, dataloader, device, name = "test"):
                     handle.write("data_index,prob_ham,prob_spam\n")
                 handle.writelines(f"{idx},{ham},{spam}\n" for idx, ham, spam in rows)
 
+def load_model(args, configuration):
+    if args.load_trained_model:
+        print("Loading trained model from checkpoint...")
+        model = LlamaModel(configuration)
+        # trained_model_path = f"{args.prob_output_folder}/{args.model_checkpoint_name}.pt"
+        trained_model_path = "bayes_inverse_probs/ninety_two_point_8.pt"
+        state_dict = torch.load(trained_model_path, map_location=device)
+        
+        # Check if the saved model was a prefix tuned model
+        is_prefix_model = any(key.startswith('prefix_') for key in state_dict.keys())
+        
+        if is_prefix_model:
+            print("Detected prefix-tuned model checkpoint")
+            # Need to wrap with PrefixLlamaModel first, then load state dict
+            load_model_weights(model, checkpoint, cache_dir=model_cache_dir, device=device)
+            model = PrefixLlamaModel(model, prefix_length=args.prefix_length)
+            model.load_state_dict(state_dict)
+            model = model.to(device)
+        else:
+            model.load_state_dict(state_dict)
+            model = model.to(device)
+        print(f"Trained model loaded from {trained_model_path}")
+    else:
+        model = LlamaModel(configuration)
+        load_model_weights(model, checkpoint, cache_dir=model_cache_dir, device=device)
+        model = model.to(device)
+    return model
+
 if __name__ == "__main__":
     # random seed for reproducibility
     torch.manual_seed(0)
@@ -159,7 +188,7 @@ if __name__ == "__main__":
     parser.add_argument("--max_seq_len", type=int, default=256)
     parser.add_argument("--dataset_path", type=str, default="autograder/cpen455_released_datasets/train_val_subset.csv")
     parser.add_argument("--test_dataset_path", type=str, default="autograder/cpen455_released_datasets/test_subset.csv")
-    parser.add_argument("--synthetic_dataset_path", type=str, default="autograder/cpen455_released_datasets/synthetic_train_val.csv")
+    parser.add_argument("--synthetic_dataset_path", type=str, default="autograder/cpen455_released_datasets/synthetic_train.csv")
     parser.add_argument("--prob_output_folder", type=str, default="bayes_inverse_probs")
     parser.add_argument("--user_prompt", type=str, default="")
     parser.add_argument("--model_checkpoint_name", type=str, default="smollm2-135m-instruct")
@@ -171,9 +200,13 @@ if __name__ == "__main__":
     parser.add_argument("--early_stopping_min_delta", type=float, default=0.0, help="Minimum change in validation loss to qualify as improvement")
     
     # whether to use synthetic data
-    parser.add_argument("--synthetic_data", action='store_true', help="If set, use synthetic data instead of real data")
+    parser.add_argument("--synthetic_data", "-s", action='store_true', help="If set, use synthetic data instead of real data")
     # whether to load already trained model
-    parser.add_argument("--load_trained_model", action='store_true', help="If set, load a pre-trained model instead of training from scratch")
+    parser.add_argument("--load_trained_model", "-l", action='store_true', help="If set, load a pre-trained model instead of training from scratch")
+    # prefix tuning parameters
+    parser.add_argument("--prefix_tuning", action='store_true', help="If set, use prefix tuning instead of full fine-tuning")
+    parser.add_argument("--prefix_length", type=int, default=10, help="Length of the prefix for prefix tuning")
+    parser.add_argument("--transition_from_typical_to_prefix", "-t", action='store_true', help="If set, transition from typical to prefix tuning")
     args = parser.parse_args()
 
     print(f"Using learning rate: {args.learning_rate}")
@@ -189,6 +222,7 @@ if __name__ == "__main__":
     model_cache_dir = os.getenv("MODEL_CACHE_DIR")
     
     run = None
+    wandb.login(key="d9c06893b2122c748e02a289d44212b1aa8c92ef")
     if not is_required_training(args.method):
         run = wandb.init(
             project=os.getenv("PROJECT_NAME"), 
@@ -212,33 +246,29 @@ if __name__ == "__main__":
     config = Config._find_config_files(base_path)
 
     # Load model
-    if args.load_trained_model:
-        print("Loading trained model from checkpoint...")
-        model = LlamaModel(config)
-        trained_model_path = f"{args.prob_output_folder}/{args.model_checkpoint_name}.pt"
-        # trained_model_path = "bayes_inverse_probs/eighty_nine_acc.pt"
-        state_dict = torch.load(trained_model_path, map_location=device)
-        model.load_state_dict(state_dict)
-        model = model.to(device)
-        print(f"Trained model loaded from {trained_model_path}")
-    else:
-        model = LlamaModel(config)
-        load_model_weights(model, checkpoint, cache_dir=model_cache_dir, device=device)
-        model = model.to(device)
+    model = load_model(args, config)
+
+    # Apply prefix tuning if specified (only for new training, not when loading or when transitioning from typical to prefix)
+    if args.prefix_tuning and is_required_training(args.method) and (not args.load_trained_model or args.transition_from_typical_to_prefix):
+        print(f"Applying prefix tuning with prefix_length={args.prefix_length}")
+        model = PrefixLlamaModel(model, prefix_length=args.prefix_length)
 
     # Set up datasets and dataloaders
     train_n_val_dataset = CPEN455_2025_W1_Dataset(csv_path=args.dataset_path)
-    training_dataset, val_dataset = prepare_subset(train_n_val_dataset, int(0.8 * len(train_n_val_dataset)), ratio_spam=0.5, return_remaining=True)
-    test_dataset = CPEN455_2025_W1_Dataset(csv_path=args.test_dataset_path)
     synthetic_dataset = CPEN455_2025_W1_Dataset(csv_path=args.synthetic_dataset_path) if args.synthetic_data else None
-
     if synthetic_dataset is not None:
         print("Using synthetic data combined with real training data")
+        training_dataset, val_dataset = prepare_subset(train_n_val_dataset, int(0.6 * len(train_n_val_dataset)), ratio_spam=0.5, return_remaining=True)
+        
         # combine synthetic dataset with training dataset
         training_dataset = ConcatDataset([training_dataset, synthetic_dataset])
          
         training_dataset, _ = prepare_subset(training_dataset, int(len(training_dataset)), ratio_spam=0.5, return_remaining=True)
         # Note that we are keeping the validation dataset unchanged, so it is from the real dataset
+    else:
+        training_dataset, val_dataset = prepare_subset(train_n_val_dataset, int(0.8 * len(train_n_val_dataset)), ratio_spam=0.5, return_remaining=True)
+    
+    test_dataset = CPEN455_2025_W1_Dataset(csv_path=args.test_dataset_path)
     training_dataloader = DataLoader(
         training_dataset, 
         batch_size=args.batch_size, 
@@ -257,7 +287,13 @@ if __name__ == "__main__":
         shuffle=False
         )
     
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
+    # Set up optimizer - use only trainable parameters for prefix tuning
+    if args.prefix_tuning and is_required_training(args.method):
+        trainable_params = list(model.trainable_parameters())
+        optimizer = torch.optim.AdamW(trainable_params, lr=args.learning_rate, weight_decay=args.weight_decay)
+        print(f"Prefix tuning: training {len(trainable_params)} prefix parameter tensors")
+    else:
+        optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
     
     if os.path.exists(args.prob_output_folder) == False:
         os.makedirs(args.prob_output_folder)
@@ -307,6 +343,7 @@ if __name__ == "__main__":
                     print(f"\nValidation loss improved to {val_avg_bpd:.4f}")
                 else:
                     patience_counter += 1
+                    print(f"\nValidation loss did not improve (current: {val_avg_bpd:.4f}, best: {best_val_loss:.4f})")
                     print(f"\nNo improvement in validation loss. Patience: {patience_counter}/{args.early_stopping_patience}")
                     
                     if patience_counter >= args.early_stopping_patience:
@@ -343,8 +380,13 @@ if __name__ == "__main__":
     # Save model checkpoint if training was performed
     if is_required_training(args.method):
         checkpoint_path = f"{args.prob_output_folder}/{args.model_checkpoint_name}.pt"
-        torch.save(model.state_dict(), checkpoint_path)
-        print(f"Checkpoint saved at {checkpoint_path}")
+        # Save the best model if early stopping was used, otherwise save current model
+        if best_model_state is not None:
+            torch.save(best_model_state, checkpoint_path)
+            print(f"Best model checkpoint saved at {checkpoint_path}")
+        else:
+            torch.save(model.state_dict(), checkpoint_path)
+            print(f"Checkpoint saved at {checkpoint_path}")
 
     # After training, save probabilities on test set
     train_n_val_dataloader = DataLoader(
@@ -352,5 +394,5 @@ if __name__ == "__main__":
         batch_size=args.batch_size, 
         shuffle=False
         )
-    save_probs(args, model, tokenizer, train_n_val_dataloader, device=device, name = "train_n_val")
-    save_probs(args, model, tokenizer, test_dataloader, device=device, name = "test")
+    # save_probs(args, model, tokenizer, train_n_val_dataloader, device=device, name = "train_n_val")
+    # save_probs(args, model, tokenizer, test_dataloader, device=device, name = "test")
