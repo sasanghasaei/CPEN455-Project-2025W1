@@ -394,5 +394,5 @@ if __name__ == "__main__":
         batch_size=args.batch_size, 
         shuffle=False
         )
-    # save_probs(args, model, tokenizer, train_n_val_dataloader, device=device, name = "train_n_val")
-    # save_probs(args, model, tokenizer, test_dataloader, device=device, name = "test")
+    save_probs(args, model, tokenizer, train_n_val_dataloader, device=device, name = "train_n_val")
+    save_probs(args, model, tokenizer, test_dataloader, device=device, name = "test")

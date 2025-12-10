@@ -32,8 +32,7 @@ from examples.bayes_inverse import save_probs
 def load_model(configuration):
     print("Loading trained model from checkpoint...")
     model = LlamaModel(configuration)
-    # trained_model_path = f"models_backup/ninety_two_point_8.pt"
-    trained_model_path = "bayes_inverse_probs/smollm2-135m-instruct.pt"
+    trained_model_path = f"examples/ckpts/ninety_seven_point_3.pt"
     state_dict = torch.load(trained_model_path, map_location=device)
     
     # Check if the saved model was a prefix tuned model
