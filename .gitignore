@@ -10,3 +10,8 @@ released_dataset/
 bayes_inverse_probs*
 autograder/
 models_backup
+report/*
+!report/*.tex
+!report/*.pdf
+!report/*.sty
+examples/ckpts/*
