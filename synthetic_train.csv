@@ -1,0 +1,206 @@
+Index,Subject,Message,Spam/Ham
+10001,re : quarterly planning update,"team,
+
+following up on yesterday’s strategy session, i put together a summary of the key action items
+and timelines that we agreed upon for the q2 planning cycle. please review carefully and add any
+missing components so we can finalize before monday.
+
+1. marketing demand forecasts will be updated by sara and raj using the revised pricing index.
+   expected delivery: friday noon.
+2. operations will complete the review of gas transport capacity under different load scenarios.
+   tom mentioned the pipeline constraints at hub east need special consideration.
+3. legal will prepare an outline for the revised supplier contract templates. major changes include:
+      - new flexibility clauses on interruptible volumes
+      - documentation of emissions reporting
+      - preliminary renewable integration terms
+4. finance requires full breakdown of hedging costs for the california exposure book. we should
+   prepare sensitivity tables covering +/- 15% price moves.
+
+let’s regroup friday at 3 pm to consolidate everything into the draft deck. if anyone becomes
+blocked or needs historical figures from prior quarters, reach out and i’ll pull archives.
+
+thanks again everyone for the progress so far.
+-brian",0
+10002,fw : client site visit,"hi all,
+
+as discussed earlier, we are hosting the delegation from horizon utilities next wednesday.
+the tentative schedule is:
+
+• 9:00 – welcome briefing  
+• 9:30 – trading floor tour  
+• 10:30 – analytics demonstration  
+• 11:15 – roundtable discussion on power procurement  
+• 12:30 – lunch  
+• 1:30 – commercial structuring workshop
+
+marketing is preparing physical brochures and onboarding material. please check the shared folder
+in /projects/horizon_visit/ for slide templates and talking points. logistics team is arranging
+guest badges and meeting room reservations.
+
+if you have suggestions for discussion topics or case studies from previous deals, reply to all
+so we integrate them into the script. we want this to be smooth and impactful.
+
+best,
+melissa",0
+10003,re : invoice reconciliation,"laura,
+
+i reviewed the discrepancy on invoice #77182 from the september gas delivery. the mismatch
+appears to come from an outdated tariff multiplier used in line 7. the scheduler confirmed
+the correct rate should be 0.00347 rather than 0.00322. when applied across the full volume,
+the billing difference aligns closely to the 3.8% variation finance flagged last week.
+
+i recommend we send a corrected statement to the vendor along with a copy of the pipeline
+receipt logs so they can verify independently. if they push back, we can escalate to supply.
+let me know if you’d like me to draft the formal adjustment request.
+
+-ben",0
+10004,fw : procurement follow-up,"team,
+
+attaching extended notes from the procurement alignment call with petra energy yesterday.
+they are requesting longer-term hedging options indexed to the clean spark spread rather
+than fixed basis pricing. some highlights from the call:
+
+- client expects rising summer loads due to data center expansion
+- emphasis on flexible take-or-pay clauses  
+- interest in renewable PPAs if schedule certainty is guaranteed  
+- risk concerns around congestion pricing in ERCOT north  
+
+we agreed to model three illustrative structures for them by month-end:
+   (1) fixed strip with quarterly re-openers
+   (2) hybrid product with optionality band
+   (3) swap+call spread overlay for volatility damping
+
+we’ll need risk’s approval before presenting. please add any modelling assumptions into the
+sensitivity sheet so we avoid mismatches between teams.
+
+thanks,
+robert",0
+10005,internal memo – storage strategy,"colleagues,
+
+here is a rough draft of our internal memo about the seasonal storage strategy. the idea is to
+capture value when winter volatility peaks by maintaining moderate injection positions through
+october while layering in collars during shoulder months.
+
+historical analysis from the past 7 years shows an average uplift of 12% when storage is paired
+with covered calls under high backwardation cycles. however, we must consider counterparty credit
+exposure if winter prices collapse unexpectedly.
+
+feedback welcome before distribution to senior leadership.
+
+-julia",0
+10006,update : IT infrastructure roadmap,"hello team,
+
+after two infrastructure audits and several interviews with application owners, we now have a
+clearer view of the upgrade roadmap. the legacy job scheduler is being phased out next quarter,
+and the data lake migration will begin in march, starting with archival logs before we touch
+real-time trading streams.
+
+the cybersecurity scan also revealed outdated certificates in three edge nodes. remediation is
+underway and should complete within the week. please notify your teams to test connectivity after
+patch rollout. downtime is expected to be minimal but not zero.
+
+full documentation is now available on confluence.
+
+thanks,
+alex",0
+10007,project alpha sprint summary,"team,
+
+sprint 12 concluded with all critical tasks closed except the forecasting API integration.
+overall velocity improved 18% over prior sprint. QA flagged only two defects related to time
+zone conversions. we also improved batch execution time from 91 seconds to 42 seconds.
+
+we begin sprint 13 monday — backlog already refined. please update your availability beforehand.
+
+-marina",0
+10008,training workshop recap,"hi folks,
+
+great turnout yesterday at the visual analytics workshop. several people asked for examples
+on building anomaly detection dashboards — i uploaded sample notebooks with live data feeds.
+
+next workshop covers deployment playbooks for real-time inference.
+
+cheers,
+tom",0
+10009,weekly trading report,"attached is the weekly gas and power trading summary.
+
+key notes:
+• western power spreads tightened  
+• NE basis widened due to cold front  
+• prompt-month gas trading volume +14% w/w  
+
+full commentary in the PDF.
+
+-cory",0
+10010,fw : storage request from scheduling,"scheduling asks if we can provide updated inventory projections through april. the duct firing
+maintenance shift reduced daily withdrawal capability slightly. they want to rerun dispatch
+models before next nomination cycle.
+
+please ensure all forward curve assumptions are refreshed.
+
+-darren",0
+10011,urgent – payroll review required,"dear employee,
+
+we attempted to process your payroll, but your account verification could not be completed.
+to avoid delay in salary transfer, please update your personal details within 24 hours.
+
+access your secure payroll portal here:
+https://secure-payroll-update-center.com/login
+
+failure to complete verification may lead to temporary suspension of payment.
+
+payroll services",1
+10012,congratulations! exclusive reward unlocked,"you have been selected for a premium employee incentive program.
+claim your guaranteed reward today — laptop, watch, or cash bonus available.
+only requires quick identity validation.
+
+redeem at:
+https://claim-my-reward-benefit.life
+
+valid for 48 hours only.",1
+10013,action required – account security,"we detected multiple login attempts from an unrecognized Windows device in Germany.
+for your protection, temporary restrictions have been placed on your account.
+to restore access, complete verification using link below:
+
+https://security-restore-now.net
+
+support desk",1
+10014,investment growth opportunity,"exclusive investment package for employees — projected returns up to 22% annually.
+early participants receive doubled starting bonus.
+
+sign up now:
+http://enron-growth-invest.org/register
+
+limited availability.",1
+10015,invoice settlement delay notice,"your invoice is pending settlement. immediate update required to avoid late charges.
+upload payment details via secure billing gateway:
+
+https://billing-clear-fast.com/settle
+
+finance automation",1
+10016,expiring benefit – renew now,"your benefits package is set to expire soon. renew within 48 hours to continue access to full perks.
+health and dental coverage included.
+
+renew instantly:
+https://fast-renew-policy.org
+
+HR services",1
+10017,package shipment confirmation needed,"your package is held pending delivery verification.
+confirm shipping address here:
+http://shipment-release-verification.co
+
+failure to verify may result in return to sender.",1
+10018,tax refund eligibility,"you have unclaimed tax reimbursement of $1874.
+submit identity verification to release funds:
+https://tax-refund-portal.me
+
+act today.",1
+10019,unlock premium storage,"you've reached maximum mailbox capacity.
+upgrade to premium for unlimited space:
+https://mail-storage-upgrade.net
+
+avoid email disruption.",1
+10020,crypto wallet disabled – restore access,"due to security risk, your crypto wallet has been temporarily disabled.
+restore access using secure link below:
+https://wallet-access-restore.net/auth
+
+security operations",1

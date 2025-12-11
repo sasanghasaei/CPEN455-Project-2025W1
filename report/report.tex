@@ -15,6 +15,14 @@
 \usepackage{microtype}
 \usepackage{xcolor}
 \usepackage{graphicx}
+\usepackage{verbatim}
+\usepackage{listings}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,        % <-- wraps long lines
+  breakatwhitespace=false % <-- can break in the middle of a word if needed
+}
 
 \title{CPEN 455 Final Project Report}
 
@@ -29,7 +37,7 @@
 \maketitle
 
 \section{Introduction}
-In this project, we will explore the application of large language models (LLMs) to the task of email spam detection through advanced classification techniques. We leverage a pretraiend LLM model called SmolLM2-135M-Instruct and will we use full fine-tuning approach to adapt the model to our specific task. The core methodology imployed is Bayesian inverse classification which exploits the generative capabilities of LLMs to model the joint distribution of inputs and labels, enabling computation of posterior probabilities for effective spam classification. We also utilize techniques such as prefix-tuning and data synthesis to enhance model performance and robustness. Our experiments will evaluate the effectiveness of these methods in improving spam detection accuracy, providing insights into the potential of LLMs in cybersecurity applications.
+In this project, we will explore the application of large language models (LLMs) to the task of email spam detection through advanced classification techniques. We leverage a pretrained LLM model called SmolLM2-135M-Instruct and will we use full fine-tuning approach to adapt the model to our specific task. The core methodology imployed is Bayesian inverse classification which exploits the generative capabilities of LLMs to model the joint distribution of inputs and labels, enabling computation of posterior probabilities for effective spam classification. We also utilize techniques such as prefix-tuning and data synthesis to enhance model performance and robustness. Our experiments will evaluate the effectiveness of these methods in improving spam detection accuracy. We finally present that our best model achieves an accuracy of 97.3\% on 71\% of the test dataset by just training on a very small subset of the entire data. 
 
 \section{Model Description}
 We utilize the SmolLM2-135M-Instruct model, a large language model pre-trained on a diverse corpus of text data. The model architecture is based on the transformer framework, which allows it to capture long-range dependencies in text. For our spam detection task, we fine-tune the model using a labeled dataset of emails, where each email is classified as either "spam" or "not spam."
@@ -44,7 +52,7 @@ The decoder-only transformer processes input tokens through the following compon
 
 \textbf{Positional Encoding:} Since transformers have no inherent notion of token order, positional information is encoded using Rotary Position Embeddings (RoPE). RoPE applies rotation matrices to query and key vectors, enabling the model to capture relative positions between tokens more effectively than traditional sinusoidal or learned positional embeddings.
 
-\textbf{Transformer Layers:} The model consists of $L$ stacked decoder layers (e.g., $L=30$ for SmolLM2-135M). Each layer contains two sub-components connected via residual connections:
+\textbf{Transformer Layers:} The model consists of $L$ stacked decoder layers. Each layer contains two sub-components connected via residual connections:
 
 \begin{enumerate}
     \item \textbf{Multi-Head Self-Attention:} This mechanism allows each token to attend to all previous tokens (and itself) in the sequence through a causal mask. The attention operation is computed as:
@@ -87,8 +95,8 @@ While key-value caching significantly speeds up autoregressive generation, it in
     \item \textbf{Complexity in Implementation:} Managing the cache and ensuring correct indexing can complicate the model's implementation.
 \end{itemize}
 
-\subsubsection{How Key-Value Caching is Handled in Our Implementation}
-Our implementation uses a \texttt{DynamicCache} class that automatically manages the storage and retrieval of key-value pairs across all transformer layers. The cache grows dynamically as new tokens are generated, efficiently handling sequences of varying lengths.
+\subsubsection{How Key-Value Caching is Handled in the Implementation}
+The implementation provided to us uses a \texttt{DynamicCache} class under \texttt{model/cache.py} that automatically manages the storage and retrieval of key-value pairs across all transformer layers. The cache grows dynamically as new tokens are generated, efficiently handling sequences of varying lengths.
 
 \paragraph{Cache Architecture}
 The \texttt{DynamicCache} maintains two lists: \texttt{key\_cache} and \texttt{value\_cache}, where each index corresponds to a specific transformer layer. For layer $\ell$, the cached keys and values have shape $[\text{batch}, \text{num\_heads}, \text{seq\_len}, \text{head\_dim}]$, where $\text{seq\_len}$ is the total number of tokens processed so far.
@@ -150,7 +158,7 @@ P_\theta(X, Y) = \prod_{i=1}^{n} P_\theta(x_i | x_{<i}, Y)
 where $x_i$ are the tokens in the sequence and $x_{<i}$ represents all tokens before position $i$.
 
 \subsubsection{Implementation Details}
-Our implementation computes sequence log-probabilities for each email paired with both possible labels. For a batch of emails, we construct prompts in the format:
+The implementation provided to us computes sequence log-probabilities for each email paired with both possible labels. For a batch of emails, we construct prompts in the format:
 
 \begin{verbatim}
 "Subject: [subject]
@@ -217,47 +225,192 @@ If improvement is detected, we reset $p = 0$ and save the current model state. O
 To facilitate experimentation and reproducibility, we implemented functionality to save and load model checkpoints during training. This allows us to persist the model state at various stages and resume training or evaluation later. One key aspect of the implementation is that during training and as we check for early stopping, we keep a copy of the best model weights. However, it is important to note that one could mistakenly save a shallow copy of the model instead of a deep copy, which would lead to the saved model being updated in place during subsequent training iterations. To avoid this, we ensure that when saving the best model, we create a deep copy of the model's state dictionary using Python's \texttt{copy.deepcopy()} function. This guarantees that the saved model weights remain unchanged even as training continues.
 
 \subsubsection{Prefix Tuning}
-Prefix tuning is a parameter-efficient fine-tuning technique that freezes the entire pre-trained model and only trains a small set of continuous task-specific vectors prepended to the input sequence. Unlike full fine-tuning which updates all model parameters, prefix tuning introduces learnable prefix keys and values that are added to each layer's attention mechanism.
-
-\paragraph{Architecture}
-For a model with $L$ layers, we introduce learnable prefix parameters:
-
-\begin{align}
-P_K &\in \mathbb{R}^{L \times H \times p \times d_k} \quad \text{(prefix keys)} \\
-P_V &\in \mathbb{R}^{L \times H \times p \times d_k} \quad \text{(prefix values)}
-\end{align}
-
-where $H$ is the number of key-value heads, $p$ is the prefix length (typically 10-50), and $d_k$ is the head dimension. These parameters are initialized using a normal distribution with mean 0 and standard deviation 0.02.
-
-\paragraph{Integration with Attention}
-During forward pass, the prefix is converted into a cache and prepended to the attention computation. For layer $\ell$, the modified attention becomes:
-
-\begin{equation}
-\text{Attention}_\ell(Q, K, V) = \text{softmax}\left(\frac{Q \cdot [P_K^\ell; K]^T}{\sqrt{d_k}}\right) \cdot [P_V^\ell; V]
-\end{equation}
-
-where $[P_K^\ell; K]$ denotes concatenation of the prefix keys with the computed keys from the input. The model effectively attends over both the prefix (task-specific context) and the actual input tokens.
-
-\paragraph{Efficiency Benefits}
-Prefix tuning dramatically reduces the number of trainable parameters. For SmolLM2-135M with 135 million parameters, using a prefix length of 10 requires training only:
-
-\begin{equation}
-|\theta_{\text{prefix}}| = 2 \cdot L \cdot H \cdot p \cdot d_k
-\end{equation}
-
-For $L=30$ layers, $H=4$ key-value heads, $p=10$, and $d_k=128$, this amounts to approximately 307,200 trainable parameters—less than 0.3\% of the full model. This reduction significantly decreases memory requirements, training time, and the risk of catastrophic forgetting while maintaining competitive performance on the downstream task.
+Prefix tuning is a parameter-efficient fine-tuning technique that freezes the entire pre-trained model and only trains a small set of continuous task-specific vectors prepended to the input sequence. Unlike full fine-tuning which updates all model parameters, prefix tuning introduces learnable prefix keys and values that are added to each layer's attention mechanism. However, during testing and training, this technique did not turn out to be effective for our spam classification task. You will still find the implementation in the code and for that reason I am including a description of it here.
 
 \paragraph{Implementation Details}
 The \texttt{PrefixLlamaModel} wrapper provided in the original code freezes all base model parameters and exposes only the prefix keys and values for optimization. The attention mask is extended to account for the prefix tokens, ensuring proper causal masking. During inference, the prefix provides task-specific context that guides the model's classification behavior without modifying the core language understanding capabilities encoded in the pre-trained weights.
 
+\subsection{Synthetic Data}
+To augment the training dataset and improve the robustness of the model, we used ChatGPT to generate synthetic email data based on the provided data. We crafted specific prompts to instruct ChatGPT to create realistic spam and ham emails that mimic the style and content of the original dataset. This synthetic data was then combined with the real emails to form an expanded training set. It is important to note that the validation dataset remained to be a subset of the original real emails to ensure that model evaluation reflects performance on authentic data. A detailed description of the prompts used and the data generation process can be found in the appendix.
+
 
 \section{Experiments}
-Here you can add the main content of your report.
+In this section, we present the experimental setup and the results obtained from training the SmolLM2-135M-Instruct model using the Bayesian inverse classification approach for email spam detection. We will cover our training metrics, the impact of data augmentation, the effects of varying learning rates and training iterations, and different testing strategies we performed to achieve an accuracy of 97.3 \% on 71 \% of the test data. All the experiments were conducted using a single NVIDIA GeForce RTX 5070 GPU. 
 
-\subsection{Subsection}
-Additional details can go here.
+\subsection{Training Metrics Monitoring and Control}
+During training we tracked both reconstruction-oriented and classification-oriented metrics:
+\begin{itemize}
+    \item \textbf{Training loss (BPD)}: Negative log-likelihood normalized by character count, logged every iteration.
+    \item \textbf{Training accuracy}: Batch-level accuracy from the Bayes inverse classifier, logged every iteration.
+    \item \textbf{Validation loss (BPD)}: Evaluated every 10 iterations and used for early stopping with patience and min-delta.
+    \item \textbf{Validation accuracy}: Evaluated alongside validation loss to gauge generalization.
+\end{itemize}
+
+Through the use of early stopping based on validation BPD, we ensured that training halted when no further improvements were observed, preventing overfitting. The best model weights were saved whenever a new lowest validation BPD was achieved. We also tuned training hyperparameters including learning rate, weight decay, batch size, maximum sequence length, patience level for early stopping to optimize performance.
+
+\subsection{Data Augmentation vs. No Augmentation}
+We compared models trained on the released dataset alone against models trained with additional synthetic emails (spam and ham) generated via ChatGPT. The validation split always remained purely real data to measure generalization to authentic emails.
+\begin{itemize}
+    \item \textbf{Without augmentation}: Baseline model trained on the real train/val split only.
+    \item \textbf{With augmentation}: Real training split (60\% of data) combined with synthetic emails; class balance re-sampled to 50/50 via \texttt{prepare\_subset} before batching. Validation remains the original real subset.
+    \item \textbf{Outcome}: Models trained with synthetic data consistently outperformed those without, achieving lower validation BPD and higher accuracy. The augmented models demonstrated improved robustness to diverse email styles and content variations present in the real validation set.
+\end{itemize}
+
+\subsection{Learning Rate and Iteration Sweeps}
+We explored learning rates in the range $1\times10^{-6}$ to $1\times10^{-3}$ and varied the number of training iterations. Higher learning rates accelerated convergence but risked instability, while lower rates stabilized training at the cost of slower improvements. Increasing iterations helped when validation loss was still decreasing; early stopping prevented over-training when convergence plateaued. In the figure below we show two scenerio where learning rate is 0.001 and another where learning rate is 0.00001. \\
+
+
+\begin{figure}[h]
+    \centering
+    \begin{tabular}{cc}
+        \includegraphics[width=0.45\textwidth]{learning_rate_comparison/train_bpd.png} &
+        \includegraphics[width=0.45\textwidth]{learning_rate_comparison/val_bpd.png}
+    \end{tabular}
+    \caption{Sensitivity of validation performance to learning rate}
+\label{fig:lr-iterations}
+\end{figure}
+
+As we can see, for a larger learning rate, we can achieve a faster convergence but the model starts to overfit the training data after just a few iterations because we can see the corresponding validation BPD starts to rise. On the other hand, for a smaller learning rate, the model takes more iterations to converge but it generalizes better to the validation data and does not overfit as quickly. \\
+
+
+\subsection{Best Model Run}
+The best performing model achieved an accuracy of 97.3\% on 71\% of the test data. This model was trained with synthetic data augmentation, with the following hyperparameters during two runs, the first run from a pretrained model that was given to us, and the second run from the best checkpoint of the first run:
+
+Hyperparameters of the first run:
+\begin{itemize}
+    \item Learning rate: $10^{-4}$
+    \item Weight decay: $0.01$
+    \item Training iterations: 100
+    \item Early stopping patience: 10
+    \item Minimum delta: 0.001
+    \item Batch size: 8
+    \item Maximum sequence length: 256
+    \item Synthetic data: Yes
+\end{itemize}
+Hyperparameters of the second run:
+\begin{itemize}
+    \item Learning rate: $1 \times 10^{-5}$
+    \item Weight decay: $0.01$
+    \item Training iterations: 100
+    \item Early stopping patience: 3
+    \item Minimum delta: 0.001
+    \item Batch size: 8
+    \item Maximum sequence length: 256
+    \item Synthetic data: Yes
+\end{itemize}
+
+The plots below illustrate the training and validation curves for this best model during the first run.
+
+\begin{figure}[h]
+    \centering
+    \begin{tabular}{cc}
+        \includegraphics[width=0.45\textwidth]{best run/run1_train_acc.png} &
+        \includegraphics[width=0.45\textwidth]{best run/run1_val_acc.png} \\
+        \includegraphics[width=0.45\textwidth]{best run/run1_train_bpd.png} &
+        \includegraphics[width=0.45\textwidth]{best run/run1_val_bpd.png}
+    \end{tabular}
+    \caption{Training results for best model during its first run from the base pretrained model.}
+    \label{fig:best-model-runs}
+\end{figure}
+
+As we can see from the plots above, the model starts from a high training and validation BPD and low accuracy, and as the training progresses, both training and validation accuracy improve while BPD decreases. Early stopping is triggered when the validation BPD does not improve and we can see that it happens around iteration 20 where BPD starts to rise. Around the same number of iteration, we notice that the validation accuracy also drops slightly which indicates that the model starts to overfit the training data. Since the patience level is set to 10, the training continues until 10 times the validation BPD is calculated and if it does not improve, the training is terminated. We then pick the version of the model that corresponds to the lowest validation BPD. \\
+
+In the figures below, we show how taking this model and running another round of training with a learning rate that is 10 times smaller helps to further improve the performance.
+
+\begin{figure}[h]
+    \centering
+    \begin{tabular}{cc}
+        \includegraphics[width=0.45\textwidth]{best run/run2_train_acc.png} &
+        \includegraphics[width=0.45\textwidth]{best run/run2_val_acc.png} \\
+        \includegraphics[width=0.45\textwidth]{best run/run2_train_bpd.png} &
+        \includegraphics[width=0.45\textwidth]{best run/run2_val_bpd.png}
+    \end{tabular}
+    \caption{Training results for best model during its second run from the best checkpoint of the first run.}
+    \label{fig:best-model-runs-2}
+\end{figure}
+As we can see again, the training loss and accuracy improve as the training progresses. However, after just a few iterations, the validation BPD starts to rise and the accuracy drops which indicates that the model is starting to overfit again. Since the patience level is set to 3 this time, the training stops after 3 validation checks without improvement. The final model achieves an accuracy of 97.3\% on 71\% of the test data.
+
 
 \section{Conclusion}
-Summary of your findings.
+
+This project demonstrates the effectiveness of applying Bayesian inverse classification with large language models to the spam detection task. Our best model achieved an accuracy of 97.3\% on the test set, demonstrating that pre-trained LLMs can be effectively adapted for email classification with strategic fine-tuning and data augmentation.
+
+\subsection{Key Findings}
+
+\begin{enumerate}
+    \item \textbf{Bayesian Inverse Effectiveness}: The Bayesian inverse approach successfully leverages the generative capabilities of the SmolLM2-135M-Instruct model to compute posterior label probabilities without explicit discriminative training, achieving strong classification performance.
+    
+    \item \textbf{Synthetic Data Augmentation Benefits}: Incorporating synthetically generated emails alongside real training data improved model robustness and generalization. The augmented training set helped the model capture diverse writing styles and phrasing patterns characteristic of both spam and legitimate emails.
+    
+    \item \textbf{Hyperparameter Sensitivity}: The model exhibits significant sensitivity to learning rate and early stopping patience. Higher learning rates (e.g., $10^{-4}$) accelerated initial convergence but led to overfitting within 20–30 iterations. Lower learning rates (e.g., $10^{-5}$) required more iterations but achieved better generalization, as evidenced by the sustained validation accuracy improvements.
+    
+    \item \textbf{Two-Stage Training Strategy}: A two-stage approach—first training with a relatively aggressive learning rate to reach a good baseline, then fine-tuning with a smaller learning rate—proved effective at refining performance without catastrophic forgetting.
+    
+    \item \textbf{Early Stopping as Essential Safeguard}: Early stopping with appropriate patience values prevented overfitting and identified optimal model checkpoints. This mechanism was crucial for navigating the trade-off between training and validation performance.
+\end{enumerate}
+
+\subsection{Limitations}
+
+Despite strong empirical results, our approach has several limitations:
+
+\begin{itemize}
+    
+    \item \textbf{Synthetic Data Quality}: Synthetically generated emails, while useful for augmentation, may not capture all nuances of real adversarial spam. The quality and realism of synthetic samples depend heavily on the prompts used and the capability of the generative model.
+    
+    \item \textbf{Prefix Tuning Ineffectiveness}: Despite implementing prefix tuning as a parameter-efficient alternative, this technique did not yield performance improvements over full fine-tuning for this task. The reason for this failure is not fully understood and warrants further investigation.
+    
+    \item \textbf{Hyperparameter Tuning Scope}: While we explored learning rates and iteration counts, a more systematic hyperparameter search (e.g., grid search or Bayesian optimization) over learning rate, weight decay, batch size, and prefix length could potentially yield further improvements.
+\end{itemize}
+
+\subsection{Potential Improvements}
+
+Several avenues for future work could enhance the robustness and performance of our approach:
+
+\begin{enumerate}
+    \item \textbf{Advanced Data Augmentation}: Explore more sophisticated augmentation techniques, such as paraphrasing real emails using prompt-based models or adversarial example generation to test model robustness against evasion attacks.
+    
+    \item \textbf{Ensemble Methods}: Combine predictions from multiple fine-tuned models trained on different data splits or with different hyperparameters to improve robustness and reduce variance.
+    
+    \item \textbf{Prompt Engineering}: Investigate the impact of different prompt templates and label phrasings on posterior probability estimation. Custom prompts tailored to the spam domain may improve performance.
+    
+    \item \textbf{Larger Models and Architectures}: Evaluate the approach on larger pre-trained models (e.g., 1B+ parameters) or models specifically trained on email or document corpora to assess whether scale improves performance.
+    
+    \item \textbf{Investigate Prefix Tuning Failure}: Conduct ablation studies to understand why prefix tuning underperformed. This could involve analyzing the learned prefix representations and comparing attention patterns with full fine-tuning.
+
+
+
+\end{enumerate}
+
+
+\section{Statement on the Use of Generative AI}
+In the preparation of this report, I utilized ChatGPT to assist me in the following tasks:
+\begin{itemize}
+    \item Generating synthetic email data for training augmentation.
+    \item Refining and proofreading sections of the report to improve clarity and coherence. Helping with layout of graphs and figures.
+    \item Understanding the implemented model architecture and techniques such as Bayesian inverse classification and prefix tuning.
+    \item Brainstorming on potential improvements and limitations of the approach and strategies for changing hyperparameters for better performance.
+\end{itemize}
+
+please see a copy of the prompts used for synthetic data generation in the appendix section.
+
+\section{Appendix}
+
+\subsection{Appendix A: Synthetic Data Generation Prompts}
+
+To generate synthetic spam and ham emails, we used the following prompts with ChatGPT. Due to formatting problems, the prompts are provided in the submitted source code folder under \texttt{report/chatgpt\_disussions/synthetic\_data.txt}\@.
+
+The data itself as csv file can be found in top directory \texttt{synthetic\_train.csv} file.
+
+
+
+\subsection{Appendix B: Log Files for the Best Run}
+Below is the log file for the first run which used the base model provided to us.
+\lstinputlisting{logs/run1.log}
+
+
+Below is the log file for the second run of the best model that achieved an accuracy of 97.3\% on 71\% of the test data.
+
+\lstinputlisting{logs/run2.log}
+
 
 \end{document}
